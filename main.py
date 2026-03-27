@@ -1,5 +1,6 @@
 # main.py
 import os
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -8,6 +9,9 @@ import openai
 chat_memory = {}
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 app = FastAPI()
 
 app.add_middleware(
@@ -22,6 +26,34 @@ def index():
     return FileResponse("index.html")
 
 
+# =============================================
+# Supabase logging functie
+# =============================================
+async def log_to_supabase(client_id: str, session_id: str, question: str, answer: str):
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/chat_logs",
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
+                },
+                json={
+                    "client_id": client_id,
+                    "session_id": session_id,
+                    "question": question,
+                    "answer": answer
+                }
+            )
+    except Exception as e:
+        print(f"Supabase logging error: {e}")
+
+
+# =============================================
+# System prompt — Interaict
+# =============================================
 SYSTEM_PROMPT = """
 Je bent de digitale assistent van Interaict.
 Interaict is een onafhankelijk B2B-bedrijf gevestigd in Tilburg dat bedrijven verbindt met de juiste AI-softwareleverancier.
@@ -77,8 +109,12 @@ Website: interaict.nl
 Chatbot powered by AI-Migo (ai-migo.nl)
 """
 
+
+# =============================================
+# Chat endpoint
+# =============================================
 @app.get("/chat")
-def chat(message: str, session_id: str):
+async def chat(message: str, session_id: str, client_id: str = "interaict"):
     try:
         if session_id not in chat_memory:
             chat_memory[session_id] = []
@@ -102,6 +138,14 @@ def chat(message: str, session_id: str):
 
         chat_memory[session_id].append(
             {"role": "assistant", "content": answer}
+        )
+
+        # Sla op in Supabase
+        await log_to_supabase(
+            client_id=client_id,
+            session_id=session_id,
+            question=message,
+            answer=answer
         )
 
         return {"response": answer}
