@@ -19,7 +19,7 @@ app.add_middleware(
 
 @app.get("/")
 def index():
-    return FileResponse("interaict.html")
+    return FileResponse("index.html")
 
 
 SYSTEM_PROMPT = """
