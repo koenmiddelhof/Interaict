@@ -19,7 +19,7 @@ app.add_middleware(
 
 @app.get("/")
 def index():
-    return FileResponse("interaict_with_chatbot.html")
+    return FileResponse("interaict.html")
 
 
 SYSTEM_PROMPT = """
