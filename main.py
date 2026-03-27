@@ -1,16 +1,19 @@
 # main.py
 import os
 import httpx
+import openai
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-import openai
+from fastapi.responses import FileResponse, JSONResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from report import generate_and_send_report
 
 chat_memory = {}
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+REPORT_EMAIL = os.getenv("REPORT_EMAIL", "koenmiddelhof@hotmail.com")
 
 app = FastAPI()
 
@@ -21,13 +24,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# =============================================
+# Maandelijkse scheduler
+# =============================================
+scheduler = AsyncIOScheduler()
+
+@app.on_event("startup")
+async def start_scheduler():
+    # Elke 1e van de maand om 09:00
+    scheduler.add_job(
+        generate_and_send_report,
+        "cron",
+        day=1,
+        hour=9,
+        minute=0,
+        kwargs={
+            "client_id": "interaict",
+            "to_email": REPORT_EMAIL,
+            "days": 30
+        }
+    )
+    scheduler.start()
+    print("✅ Maandelijkse rapport scheduler gestart")
+
+
+# =============================================
+# Endpoints
+# =============================================
 @app.get("/")
 def index():
     return FileResponse("index.html")
 
 
+@app.get("/send-report")
+async def send_report_manually(
+    email: str = "koenmiddelhof@hotmail.com",
+    client_id: str = "interaict",
+    days: int = 30
+):
+    """
+    Handmatig rapport versturen — voor testen.
+    Gebruik: /send-report?email=jouw@mail.nl&client_id=interaict&days=30
+    """
+    result = await generate_and_send_report(
+        client_id=client_id,
+        to_email=email,
+        days=days
+    )
+    return JSONResponse(result)
+
+
 # =============================================
-# Supabase logging functie
+# Supabase logging
 # =============================================
 async def log_to_supabase(client_id: str, session_id: str, question: str, answer: str):
     try:
@@ -140,7 +189,6 @@ async def chat(message: str, session_id: str, client_id: str = "interaict"):
             {"role": "assistant", "content": answer}
         )
 
-        # Sla op in Supabase
         await log_to_supabase(
             client_id=client_id,
             session_id=session_id,
